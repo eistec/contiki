@@ -98,9 +98,6 @@ rtimer_arch_init(void) {
   PRINTF("rtimer_arch_init: Done\n");
 }
 
-/* XXX The reference manual says that the CMR register should not be written
- * while the timer is enabled unless the TCF (interrupt flag) is set.
- */
 void
 rtimer_arch_schedule(rtimer_clock_t t) {
   rtimer_clock_t now = rtimer_arch_now();
@@ -113,13 +110,15 @@ rtimer_arch_schedule(rtimer_clock_t t) {
     /* We can not reach this time in one period, wrap around */
     t = now + RTIMER_PERIOD;
   }
-  /* Disable timer in order to modify the CMR register. */
+  /* The reference manual states that the CMR register should not be written
+   * while the timer is enabled unless the TCF (interrupt flag) is set.
   /* It seems like modifying the CMR variable without stopping (against the
    * reference manual's recommendations) cause sporadic failures of the
    * interrupt to trigger. It seems to happen at random. */
   /* The downside is that the CNR register is reset when the LPTMR is disabled,
    * we need a new offset computation. */
   offset = rtimer_arch_now();
+  /* Disable timer in order to modify the CMR register. */
   BITBAND_REG(LPTMR0->CSR, LPTMR_CSR_TEN_SHIFT) = 0;
   /* Set timer value */
   /* t and offset are 32 bit ints, CMR_COMPARE is only 16 bit wide,
@@ -127,8 +126,6 @@ rtimer_arch_schedule(rtimer_clock_t t) {
    * for the MSBs in the ISR. */
   LPTMR0->CMR = LPTMR_CMR_COMPARE(t - offset);
   BITBAND_REG(LPTMR0->CSR, LPTMR_CSR_TEN_SHIFT) = 1;
-
-  //~ printf("ras: %lu, %lu\n", (unsigned long)LPTMR0->CMR, (unsigned long)offset);
 }
 
 rtimer_clock_t
