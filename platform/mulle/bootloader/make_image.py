@@ -136,25 +136,25 @@ if __name__ == "__main__":
 
             num_blocks = (len(data[0][1]) + 511) // 512 # floored division
             size = len(data[0][1]) + num_blocks * 2
-            f.write(struct.pack("<I", size))
-            crc32 = struct.pack("<I", calc_crc32(data[0][1]))
-            f.write(crc32)
+            f.write(struct.pack(">I", size))
+            crc32 = calc_crc32(data[0][1])
+            f.write(struct.pack(">I", crc32))
 
             for d in data[0][1]:
                 f.write(struct.pack("B", d))
                 crc = calc_crc(crc, d)
                 cnr += 1
                 if cnr == 512:
-                    crc = calc_crc(crc, crc32[0])
-                    crc = calc_crc(crc, crc32[1])
-                    crc = calc_crc(crc, crc32[2])
-                    crc = calc_crc(crc, crc32[3])
-                    f.write(struct.pack("<H", crc))
+                    crc = calc_crc(crc, (crc32 >> 24) & 0xFF)
+                    crc = calc_crc(crc, (crc32 >> 16) & 0xFF)
+                    crc = calc_crc(crc, (crc32 >>  8) & 0xFF)
+                    crc = calc_crc(crc, (crc32 >>  0) & 0xFF)
+                    f.write(struct.pack(">H", crc))
                     crc = 0
                     cnr = 0
             if cnr != 0:
-                crc = calc_crc(crc, crc32[0])
-                crc = calc_crc(crc, crc32[1])
-                crc = calc_crc(crc, crc32[2])
-                crc = calc_crc(crc, crc32[3])
-                f.write(struct.pack("<H", crc))
+                crc = calc_crc(crc, (crc32 >> 24) & 0xFF)
+                crc = calc_crc(crc, (crc32 >> 16) & 0xFF)
+                crc = calc_crc(crc, (crc32 >>  8) & 0xFF)
+                crc = calc_crc(crc, (crc32 >>  0) & 0xFF)
+                f.write(struct.pack(">H", crc))
