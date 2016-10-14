@@ -2,6 +2,7 @@
 # Copyright (c) 2013, Eislab, Lulea University of Technology
 
 from __future__ import print_function
+from __future__ import division
 
 import sys, time, os.path, operator, serial, struct, os, math
 __author__ = "Henrik Makitaavola"
@@ -30,9 +31,9 @@ def buildImage(ihex):
     end_addr = None
     offset = 0
 
-    file = open(ihex, 'r')
-    image = file.read();
-    file.close()
+    print("Making image from %s" % (ihex,))
+    with open(ihex, 'r') as fp:
+        image = fp.read()
 
     for line in image.split():
         #print "DEBUG:", line
@@ -64,7 +65,7 @@ def buildImage(ihex):
                 offset = int(line[9:9+4], 16) << 4
             elif rectype == 0x01:
                 all.append((start_addr, section))
-                print(start_addr)
+                print("0x01 start_addr: %x" % (start_addr,))
                 section = []
                 start_addr = addr
         except:
@@ -73,11 +74,11 @@ def buildImage(ihex):
 
     #Pop all sections except the first
     for e in all:
-      print(e[0])
+      print("start_addr: 0x%x" % (e[0],))
     for i in range(1, len(all)):
       all.pop()
     print('Ihex read complete:')
-    print(('  ' + '\n  '.join(["%5d bytes starting at 0x%X" % (len(l), a) for (a, l) in all])))
+    print(('  ' + '\n  '.join(["%6d bytes starting at 0x%X" % (len(l), a) for (a, l) in all])))
     #print('  %d bytes in %d sections\n' % (reduce(operator.add, [len(l) for (_, l) in all]), len(all)))
 
     #all_data = []
@@ -102,14 +103,14 @@ def calc_crc32(data):
     for byte in data:
         crc = crc ^ byte
         for j in range(0,8): # Do eight times.
-            mask = -(crc & 1)
+            mask = (-(crc & 1)) & 0xFFFFFFFF
             crc = (crc >> 1) ^ (0xEDB88320 & mask)
-    return ~crc
+    return crc ^ 0xFFFFFFFF
 
 
 if __name__ == "__main__":
     if len(sys.argv) != 4:
-        print("Usage: %s <ihex> <output>" % sys.argv[0])
+        print("Usage: %s <ihex> <output> <start address>" % sys.argv[0])
         print("  <ihex> is the application program in ihex format.")
         print("  <output> is the name of the file to store the uploadable ihex data in.")
         print("  <start address> expected start address of application in memory")
@@ -129,40 +130,31 @@ if __name__ == "__main__":
         if (data[0][0] != start):
             print("ERROR: Expected start address 0x%X but got 0x%X" %(start, data[0][0]))
             exit(1)
-        f = open(sys.argv[2], 'w')
-        cnr = 0
-        crc = 0
-        size = encode(int(len(data[0][1]) + math.ceil(float(len(data[0][1])) / 512.0)*2), 4)
-        f.write(chr(size[0]))
-        f.write(chr(size[1]))
-        f.write(chr(size[2]))
-        f.write(chr(size[3]))
-        crc32 = encode(calc_crc32(data[0][1]), 4)
-        f.write(chr(crc32[0]))
-        f.write(chr(crc32[1]))
-        f.write(chr(crc32[2]))
-        f.write(chr(crc32[3]))
+        with open(sys.argv[2], 'wb') as f:
+            cnr = 0
+            crc = 0
 
-        for d in data[0][1]:
-            f.write(chr(d))
-            crc = calc_crc(crc, d)
-            cnr += 1
-            if cnr == 512:
+            num_blocks = (len(data[0][1]) + 511) // 512 # floored division
+            size = len(data[0][1]) + num_blocks * 2
+            f.write(struct.pack("<I", size))
+            crc32 = struct.pack("<I", calc_crc32(data[0][1]))
+            f.write(crc32)
+
+            for d in data[0][1]:
+                f.write(struct.pack("B", d))
+                crc = calc_crc(crc, d)
+                cnr += 1
+                if cnr == 512:
+                    crc = calc_crc(crc, crc32[0])
+                    crc = calc_crc(crc, crc32[1])
+                    crc = calc_crc(crc, crc32[2])
+                    crc = calc_crc(crc, crc32[3])
+                    f.write(struct.pack("<H", crc))
+                    crc = 0
+                    cnr = 0
+            if cnr != 0:
                 crc = calc_crc(crc, crc32[0])
                 crc = calc_crc(crc, crc32[1])
                 crc = calc_crc(crc, crc32[2])
                 crc = calc_crc(crc, crc32[3])
-                ecrc = encode(crc, 2)
-                f.write(chr(ecrc[0]))
-                f.write(chr(ecrc[1]))
-                crc = 0
-                cnr = 0
-        if cnr != 0:
-            crc = calc_crc(crc, crc32[0])
-            crc = calc_crc(crc, crc32[1])
-            crc = calc_crc(crc, crc32[2])
-            crc = calc_crc(crc, crc32[3])
-            ecrc = encode(crc, 2)
-            f.write(chr(ecrc[0]))
-            f.write(chr(ecrc[1]))
-        f.close()
+                f.write(struct.pack("<H", crc))
