@@ -43,7 +43,6 @@
 
 #include <stdint.h>
 #include "K60.h"
-#include "synchronization.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -101,6 +100,7 @@ typedef enum llwu_wakeup_pin {
   LLWU_WAKEUP_PIN_PTD6 = 15,
   LLWU_WAKEUP_PIN_END
 } llwu_wakeup_pin_t;
+#define LLWU_WAKEUP_PIN_NUMOF 16
 
 typedef enum llwu_wakeup_edge {
   LLWU_WAKEUP_EDGE_DISABLE = 0b00,
@@ -117,6 +117,8 @@ typedef struct llwu_control {
   struct llwu_control *next;
   char allow_llwu;
 } llwu_control_t;
+
+typedef void (*llwu_cb)(void *);
 
 /* Macro to create new llwu control struct for clients. */
 #define LLWU_CONTROL(name) static llwu_control_t name[1] = { { NULL, 1 } } /* default allow deep sleep */
@@ -143,18 +145,19 @@ void llwu_set_allow(llwu_control_t *c, char allow);
 void llwu_enable_wakeup_module(const llwu_wakeup_module_t module);
 void llwu_disable_wakeup_module(const llwu_wakeup_module_t module);
 void llwu_set_wakeup_pin(const llwu_wakeup_pin_t pin, const llwu_wakeup_edge_t edge);
+void llwu_set_wakeup_callback(llwu_wakeup_pin_t pin, llwu_cb cb, void *arg);
 
 /* We can not use a lock variable for the inhibit counters, because that can
  * lead to deadlocks in ISRs, but we can use the exclusive load/store
  * instructions (same as used for implementing thread safe locks) for the
  * inhibit counters themselves to make sure we never lose an increment or
  * decrement. */
-#define LLWU_INHIBIT_STOP() (exclusive_increment(&llwu_inhibit_stop_sema))
-#define LLWU_INHIBIT_VLPS() (exclusive_increment(&llwu_inhibit_vlps_sema))
-#define LLWU_INHIBIT_LLS() (exclusive_increment(&llwu_inhibit_lls_sema))
-#define LLWU_UNINHIBIT_STOP() (exclusive_decrement(&llwu_inhibit_stop_sema))
-#define LLWU_UNINHIBIT_VLPS() (exclusive_decrement(&llwu_inhibit_vlps_sema))
-#define LLWU_UNINHIBIT_LLS() (exclusive_decrement(&llwu_inhibit_lls_sema))
+#define LLWU_INHIBIT_STOP()   (__atomic_fetch_add(&llwu_inhibit_stop_sema, 1, __ATOMIC_SEQ_CST))
+#define LLWU_INHIBIT_VLPS()   (__atomic_fetch_add(&llwu_inhibit_vlps_sema, 1, __ATOMIC_SEQ_CST))
+#define LLWU_INHIBIT_LLS()    (__atomic_fetch_add(&llwu_inhibit_lls_sema,  1, __ATOMIC_SEQ_CST))
+#define LLWU_UNINHIBIT_STOP() (__atomic_fetch_sub(&llwu_inhibit_stop_sema, 1, __ATOMIC_SEQ_CST))
+#define LLWU_UNINHIBIT_VLPS() (__atomic_fetch_sub(&llwu_inhibit_vlps_sema, 1, __ATOMIC_SEQ_CST))
+#define LLWU_UNINHIBIT_LLS()  (__atomic_fetch_sub(&llwu_inhibit_lls_sema,  1, __ATOMIC_SEQ_CST))
 
 #ifdef __cplusplus
 } /* extern "C" */
