@@ -116,7 +116,7 @@ ifeq ($(PROGRAMMER_VERSION),)
   PROGRAMMER_VERSION ?= 0.60
 endif
 
-OOCD_BOARD_FLAGS ?= -f '$(PLATFORM_DIR)/tools/openocd/mulle-programmer-$(PROGRAMMER_VERSION).conf'
+export OPENOCD_CONFIG ?= $(PLATFORM_DIR)/tools/openocd/mulle-programmer-$(PROGRAMMER_VERSION).conf
 
 # Host OS name
 OS := $(shell uname)
@@ -142,69 +142,33 @@ endif
 
 # Add serial matching command
 ifneq ($(PROGRAMMER_SERIAL),)
-  OOCD_BOARD_FLAGS += -c 'ftdi_serial $(PROGRAMMER_SERIAL)'
+  OPENOCD_EXTRA_INIT += -c 'ftdi_serial $(PROGRAMMER_SERIAL)'
 endif
 
+export OPENOCD_EXTRA_INIT += $(CPU_OOCD_FLAGS)
 
 ifeq ($(FILENAME),)
 FILENAME = $(CONTIKI_PROJECT).$(TARGET)
 endif
 
-FFLAGS ?= $(OOCD_BOARD_FLAGS)
-FFLAGS += \
-    -c 'tcl_port 0' \
-    -c 'gdb_port 0' \
-    -c 'telnet_port 0' \
-    -c 'init' \
-    -c 'targets' \
-    -c 'reset halt' \
-    -c 'flash write_image erase $(FILENAME) 0x00000000 elf' \
-    -c 'reset halt' \
-    -c 'load_image $(PLATFORM_DIR)/tools/wdog/wdog-disable.bin 0x20000000 bin' \
-    -c 'resume 0x20000000' \
-    -c 'verify_image $(FILENAME)' \
-    -c 'reset run' \
-    -c 'shutdown'
-
-export FFLAGS
-
-DEBUGSERVER_FLAGS ?= $(OOCD_BOARD_FLAGS)
-DEBUGSERVER_FLAGS += \
-    -c 'tcl_port 0' \
-    -c 'gdb_port $(GDB_PORT)' \
-    -c 'telnet_port 0' \
-    -c 'init' \
-    -c 'targets' \
-    -c 'reset halt'
-
-export DEBUGSERVER_FLAGS
-
-RESET_FLAGS ?= $(OOCD_BOARD_FLAGS)
-RESET_FLAGS += \
-    -c 'tcl_port 0' \
-    -c 'gdb_port 0' \
-    -c 'telnet_port 0' \
-    -c 'init' \
-    -c 'reset run' \
-    -c 'shutdown'
-
-export RESET_FLAGS
-
-DEBUGGER_FLAGS ?= -x $(PLATFORM_DIR)/tools/gdb.conf
-DEBUGGER_FLAGS += \
-    -ex 'tar ext :$(GDB_PORT)' \
-    $(FILENAME)
-
-export DEBUGGER_FLAGS
+export OPENOCD_PRE_VERIFY_CMDS += \
+  -c 'load_image $(PLATFORM_DIR)/tools/wdog/wdog-disable.bin 0x20000000 bin' \
+  -c 'resume 0x20000000'
 
 export TERMFLAGS ?= -b115200 "$(PORT)"
 
-OPENOCD ?= openocd
-export FLASHER ?= $(OPENOCD)
-export DEBUGGER ?= $(GDB)
-export DEBUGSERVER ?= $(OPENOCD)
-export RESET ?= $(OPENOCD)
+export OPENOCD ?= openocd
+export FLASHER ?= $(PLATFORM_DIR)/tools/openocd/openocd.sh
+export DEBUGGER ?= $(PLATFORM_DIR)/tools/openocd/openocd.sh
+export DEBUGSERVER ?= $(PLATFORM_DIR)/tools/openocd/openocd.sh
+export RESET ?= $(PLATFORM_DIR)/tools/openocd/openocd.sh
 export TERMPROG ?= $(SERIALDUMP)
+export DBG ?= $(GDB)
+
+export FFLAGS ?= flash-elf
+export DEBUGGER_FLAGS ?= debug
+export DEBUGSERVER_FLAGS ?= debug-server
+export RESET_FLAGS ?= reset
 
 SERIALDUMP = $(CONTIKI)/tools/sky/serialdump-linux
 
@@ -221,13 +185,13 @@ login:
 upload: $(CONTIKI_PROJECT).u
 
 flash: $(FILENAME)
-	$(FLASHER) $(FFLAGS)
+	ELFFILE='$(FILENAME)' $(FLASHER) $(FFLAGS)
 
 term:
 	$(TERMPROG) $(TERMFLAGS)
 
 debug: $(FILENAME)
-	$(DEBUGGER) $(DEBUGGER_FLAGS)
+	ELFFILE='$(FILENAME)' $(DEBUGGER) $(DEBUGGER_FLAGS)
 
 debug-server:
 	$(DEBUGSERVER) $(DEBUGSERVER_FLAGS)
